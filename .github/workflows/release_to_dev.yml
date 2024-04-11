@@ -1,0 +1,51 @@
+name: Release to dev
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.base.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-to-dev:
+    env:
+      GOPRIVATE: github.com/livingpackets/*
+      GITHUB_TOKEN: ${{ secrets.DEPLOYBOT_TOKEN }}
+    permissions:
+      id-token: write
+      contents: read
+      issues: read
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
+
+    - uses: actions/setup-go@v3
+      with:
+        go-version-file: './go.mod'
+        cache: false
+
+    - name: download modules and prerequisites
+      run: |
+        echo "machine github.com login livingpackets-deploybot password ${GITHUB_TOKEN} " >> ~/.netrc
+        go mod download
+      env:
+        GITHUB_TOKEN: ${{ secrets.DEPLOYBOT_TOKEN }}
+        GOPRIVATE: github.com/livingpackets/*
+
+    # postgres!
+    services:
+      postgres:
+        image: postgres:14.5
+        env:
+          POSTGRES_USER: runner
+          POSTGRES_PASSWORD: runner
+          POSTGRES_DB: testdb
+        ports:
+        - 5432:5432
+        # needed because the postgres container does not provide a healthcheck
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5

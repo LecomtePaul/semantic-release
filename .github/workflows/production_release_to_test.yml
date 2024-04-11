@@ -1,0 +1,60 @@
+name: Production Release
+
+on:
+  push:
+    branches:
+      - prod
+      - pre-prod
+
+jobs:
+  production-release-to-test:
+    env:
+      GOPRIVATE: github.com/livingpackets/*
+      GITHUB_TOKEN: ${{ secrets.DEPLOYBOT_TOKEN }}
+    permissions:
+      id-token: write
+      contents: write
+      issues: read
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: '0'
+    - uses: actions/setup-go@v3
+      with:
+        go-version-file: './go.mod'
+        cache: false
+
+    - name: download modules and prerequisites
+      run: |
+        echo "machine github.com login livingpackets-deploybot password ${GITHUB_TOKEN} " >> ~/.netrc
+        go mod download
+      env:
+        GITHUB_TOKEN: ${{ secrets.DEPLOYBOT_TOKEN }}
+        GOPRIVATE: github.com/livingpackets/*
+      
+    - name: build && test
+
+        go vet ./...
+        go test -count=1 -p 1 ./...
+    
+    - name: Semantic Release
+      uses: cycjimmy/semantic-release-action@v3
+      id: semantic
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+    # postgres!
+    services:
+      postgres:
+        image: postgres:14.5
+        env:
+          POSTGRES_USER: runner
+          POSTGRES_PASSWORD: runner
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        # needed because the postgres container does not provide a healthcheck
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
